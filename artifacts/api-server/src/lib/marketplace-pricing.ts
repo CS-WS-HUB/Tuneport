@@ -57,6 +57,9 @@ export function quoteMarketplacePrice(listingAmountCents: number): MarketplacePr
     "MARKETPLACE_COMMISSION_BPS",
     DEFAULT_COMMISSION_BPS,
   );
+  if (commissionBasisPoints >= 10_000) {
+    throw new Error("MARKETPLACE_COMMISSION_BPS must be less than 10000 basis points");
+  }
   const processingEstimateBasisPoints = readBps(
     "STRIPE_CARD_PROCESSING_ESTIMATE_BPS",
     DEFAULT_CARD_PROCESSING_BPS,
@@ -89,9 +92,17 @@ export function quoteMarketplacePrice(listingAmountCents: number): MarketplacePr
   };
 }
 
-export const marketplacePricingConfiguration = () => ({
+export const marketplacePricingConfiguration = () => {
+  const commissionBasisPoints = readBps(
+    "MARKETPLACE_COMMISSION_BPS",
+    DEFAULT_COMMISSION_BPS,
+  );
+  if (commissionBasisPoints >= 10_000) {
+    throw new Error("MARKETPLACE_COMMISSION_BPS must be less than 10000 basis points");
+  }
+  return {
   currency: "usd" as const,
-  commissionBasisPoints: readBps("MARKETPLACE_COMMISSION_BPS", DEFAULT_COMMISSION_BPS),
+  commissionBasisPoints,
   processingEstimateBasisPoints: readBps(
     "STRIPE_CARD_PROCESSING_ESTIMATE_BPS",
     DEFAULT_CARD_PROCESSING_BPS,
@@ -103,4 +114,5 @@ export const marketplacePricingConfiguration = () => ({
   minimumListingAmountCents: 100,
   maximumListingAmountCents: MAX_LISTING_AMOUNT_CENTS,
   processingEstimateIsNotFinal: true as const,
-});
+  };
+};
