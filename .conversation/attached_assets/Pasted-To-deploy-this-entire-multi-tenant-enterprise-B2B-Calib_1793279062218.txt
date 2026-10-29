@@ -1,0 +1,513 @@
+To deploy this entire multi-tenant enterprise B2B Calibration Hub on Replit in a single click, you must use Replit’s native Object-Oriented Project Blueprint Specification syntax.
+Replit's autonomous workspace engine does not just look at isolated blocks of text; it requires an integrated environment profile mapping the .replit configuration, initialization scripts, database connection pooling, and multi-file structures simultaneously.
+
+The One-Shot Replit Blueprint Configuration Engine
+
+Copy the entire block below and paste it directly into the Replit Agent / Workspace prompt box.
+text
+PRIME DIRECTIVE & RUNTIME SPECIFICATION:
+Act as an Elite Systems Architect and Principal Full-Stack Engineer. We are deploying a multi-tenant B2B2C Remote Calibration & Telemetry Data-Exchange Hub (The "Calibration Hub") natively within this Replit container workspace. 
+
+You must instantiate a fully configured Next.js 15+ App Router architecture utilizing TypeScript, Tailwind CSS, Prisma ORM, and PostgreSQL. You must write complete, production-grade, type-strict files. Do not use shorthand ellipses, ellipses truncation, or empty placeholders. Every single asset must be fully realized, syntactically correct, and ready for hot-reloading execution loops.
+
+Structure, provision, and verify the following absolute file hierarchy tree:
+
+---
+
+### CONFIGURATION PILLAR 1: AUTOMATED WORKSPACE INITIALIZATION
+Create `.replit`:
+```toml
+modules = ["nodejs-20", "postgres-16"]
+run = "npm run dev"
+
+[commands.compile]
+command = "npm run build"
+
+[commands.db_migrate]
+command = "npx prisma migrate dev && npx prisma db push"
+```
+
+Create `package.json`:
+```json
+{
+  "name": "calibration-hub-enterprise",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.0",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "stripe": "^14.19.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^9.0.4",
+    "postcss": "^8.4.35",
+    "prisma": "^5.10.0",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3"
+  }
+}
+```
+
+---
+
+### CONFIGURATION PILLAR 2: DATA PERSISTENCE LAYER
+Create `prisma/schema.prisma`:
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SHOP_OWNER
+  STAFF_CALIBRATOR
+  END_USER_CLIENT
+}
+
+enum TenantStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum ProjectLifecycle {
+  AWAITING_BUILD_SHEET
+  DIAGNOSTIC_MAPPING
+  LOGGING_PENDING
+  CALIBRATION_READY
+  COMPLETION_VERIFIED
+}
+
+enum EscrowState {
+  AWAITING_CAPTURE
+  HELD_IN_ESCROW
+  DISBURSED_TO_TENANT
+  DISPUTED_LOCKED
+}
+
+model User {
+  id                 String           @id @default(uuid())
+  email              String           @unique
+  passwordHash       String
+  role               UserRole         @default(END_USER_CLIENT)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  managedTenants     Tenant[]         @relation("TenantOwner")
+  clientProjects     VehicleProject[] @relation("ClientProjects")
+}
+
+model Tenant {
+  id                     String           @id @default(uuid())
+  companyName            String
+  corporateSlug          String           @unique
+  ownerId                String           @unique
+  status                 TenantStatus     @default(PROVISIONING)
+  stripeConnectAccountId String?          @unique
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  owner                  User             @relation("TenantOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  projects               VehicleProject[] @relation("TenantProjects")
+}
+
+model VehicleProject {
+  id                    String              @id @default(uuid())
+  clientId              String
+  tenantId              String
+  engineArchitecture    String
+  inductionSpecs        Json
+  injectorFlowRatingCc  Float
+  ecuTargetPlatform     String
+  lifecycleState        ProjectLifecycle    @default(AWAITING_BUILD_SHEET)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  client                User                @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Cascade)
+  tenant                Tenant              @relation("TenantProjects", fields: [tenantId], references: [id], onDelete: Cascade)
+  calibrationSessions   CalibrationSession[]
+}
+
+model CalibrationSession {
+  id                         String         @id @default(uuid())
+  projectId                  String
+  sessionToken               String         @unique
+  transactionState           EscrowState    @default(AWAITING_CAPTURE)
+  stripePaymentIntentId      String?        @unique
+  ingestionPayloadHash       String?
+  baseTelemetryLogUrl        String?
+  verifiedCalibrationOutputUrl String?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+  project                    VehicleProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+```
+
+---
+
+### CONFIGURATION PILLAR 3: SERVER-SIDE MONOTONIC TELEMETRY GUARDRAILS
+Create `lib/validators/ecuPayloadGuard.ts`:
+```typescript
+export interface ValidationMetrics {
+  isMonotonic: boolean;
+  detectedRows: number;
+  detectedCols: number;
+  unitSystemVerified: boolean;
+  errors: string[];
+}
+
+export interface IngestedPayload {
+  xAxis: number[];
+  yAxis: number[];
+  dataMatrix: number[][];
+  metrics: ValidationMetrics;
+}
+
+export class EcuPayloadGuard {
+  private static verifyArrayMonotonicity(array: number[]): boolean {
+    if (array.length < 2) return true;
+    const initialDelta = array[1] - array[0];
+    if (initialDelta === 0) return false;
+    
+    for (let i = 1; i < array.length - 1; i++) {
+      const currentDelta = array[i + 1] - array[i];
+      if (initialDelta > 0 && currentDelta <= 0) return false;
+      if (initialDelta < 0 && currentDelta >= 0) return false;
+    }
+    return true;
+  }
+
+  public static processTelemetryStream(rawCsvData: string, expectedXUnit: string, expectedYUnit: string): IngestedPayload {
+    const errorLogs: string[] = [];
+    const lines = rawCsvData.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+    
+    if (lines.length < 3) {
+      throw new Error("Telemetry payload structurally invalid: Minimum grid limits not met.");
+    }
+
+    const headerMetadata = lines[0].toLowerCase();
+    if (!headerMetadata.includes(expectedXUnit.toLowerCase()) || !headerMetadata.includes(expectedYUnit.toLowerCase())) {
+      errorLogs.push(`Unit validation variant warning: Map requires explicit matching contexts for ${expectedXUnit} and ${expectedYUnit}.`);
+    }
+
+    const xAxisCoordinates = lines[1].split(',').slice(1).map(val => {
+      const parsed = parseFloat(val);
+      if (isNaN(parsed)) throw new Error("Matrix parsing fault: Non-numeric token found on horizontal axis reference point.");
+      return parsed;
+    });
+
+    const yAxisCoordinates: number[] = [];
+    const matrixValues: number[][] = [];
+
+    for (let i = 2; i < lines.length; i++) {
+      const segmentRow = lines[i].split(',');
+      const rowYCoordinate = parseFloat(segmentRow[0]);
+      if (isNaN(rowYCoordinate)) throw new Error(`Matrix parsing fault: Non-numeric token found on vertical coordinate mapping index ${i}.`);
+      
+      yAxisCoordinates.push(rowYCoordinate);
+      
+      const rowMatrixValues = segmentRow.slice(1).map((val, colIdx) => {
+        const parsedValue = parseFloat(val);
+        if (isNaN(parsedValue)) {
+          throw new Error(`Data corruption trace located at intersection row ${i}, column ${colIdx}.`);
+        }
+        return parsedValue;
+      });
+
+      if (rowMatrixValues.length !== xAxisCoordinates.length) {
+        throw new Error(`Asymmetrical structure detected at entry sequence ${i}: Width array bounds do not compute.`);
+      }
+      matrixValues.push(rowMatrixValues);
+    }
+
+    const xIsMonotonic = this.verifyArrayMonotonicity(xAxisCoordinates);
+    const yIsMonotonic = this.verifyArrayMonotonicity(yAxisCoordinates);
+
+    if (!xIsMonotonic || !yIsMonotonic) {
+      errorLogs.push("Mathematical matrix deadlock: Non-monotonic coordinate parameters discovered inside telemetry stream.");
+    }
+
+    return {
+      xAxis: xAxisCoordinates,
+      yAxis: yAxisCoordinates,
+      dataMatrix: matrixValues,
+      metrics: {
+        isMonotonic: xIsMonotonic && yIsMonotonic,
+        detectedRows: yAxisCoordinates.length,
+        detectedCols: xAxisCoordinates.length,
+        unitSystemVerified: errorLogs.length === 0,
+        errors: errorLogs
+      }
+    };
+  }
+}
+```
+
+---
+
+### CONFIGURATION PILLAR 4: ATOMIC TRANSACTIONAL CHECKOUT & WEBHOOK PIPELINES
+Create `app/api/checkout/escrow-capture/route.ts`:
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
+import { PrismaClient } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2023-10-16' as any });
+const prisma = new PrismaClient();
+
+export async function POST(req: NextRequest) {
+  try {
+    const requestPayload = await req.json();
+    const { projectId, allocationCostUsd } = requestPayload;
+
+    if (!projectId || !allocationCostUsd || typeof allocationCostUsd !== 'number') {
+      return NextResponse.json({ error: "Missing required checkout validation constraints." }, { status: 400 });
+    }
+
+    const sessionDeploymentUrl = await prisma.$transaction(async (tx) => {
+      const targetedProject = await tx.vehicleProject.findUnique({
+        where: { id: projectId },
+        include: { tenant: true }
+      });
+
+      if (!targetedProject || targetedProject.tenant.status !== 'ACTIVE' || !targetedProject.tenant.stripeConnectAccountId) {
+        throw new Error("Project mapping exception: Vendor space is missing, unverified, or disabled.");
+      }
+
+      const internalTrackingToken = uuidv4();
+Use code with caution.
+const calculatedTotalCents = Math.round(allocationCostUsd * 100);
+const calculatedApplicationFeeCents = Math.round(calculatedTotalCents * 0.015); // Strict 1.5% marketplace commission
+const stripeCheckoutInstance = await stripe.checkout.sessions.create({
+mode: 'payment',
+payment_method_types: ['card'],
+line_items: [{
+price_data: {
+currency: 'usd',
+product_data: { name: Remote Engine Calibration: ${targetedProject.engineArchitecture} / ${targetedProject.ecuTargetPlatform} },
+unit_amount: calculatedTotalCents,
+},
+quantity: 1,
+}],
+payment_intent_data: {
+application_fee_amount: calculatedApplicationFeeCents,
+transfer_data: { destination: targetedProject.tenant.stripeConnectAccountId },
+capture_method: 'manual', // Force manual capture rules to freeze payment assets into cryptographic escrow state
+metadata: { trackingToken: internalTrackingToken, targetProjectId: targetedProject.id }
+},
+success_url: ${req.nextUrl.origin}/dashboard/projects/${targetedProject.id}?session={CHECKOUT_SESSION_ID},
+cancel_url: ${req.nextUrl.origin}/dashboard/projects/${targetedProject.id}?status=canceled,
+});
+await tx.calibrationSession.create({
+data: {
+projectId: targetedProject.id,
+sessionToken: internalTrackingToken,
+transactionState: 'AWAITING_CAPTURE',
+stripePaymentIntentId: typeof stripeCheckoutInstance.payment_intent === 'string' ? stripeCheckoutInstance.payment_intent : null
+}
+});
+return stripeCheckoutInstance.url;
+});
+return NextResponse.json({ url: sessionDeploymentUrl }, { status: 200 });
+} catch (err: any) {
+return NextResponse.json({ error: "Escrow initialization crash.", message: err.message }, { status: 500 });
+}
+}
+```
+Create app/api/webhooks/stripe-core/route.ts:
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
+import { PrismaClient } from '@prisma/client';
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2023-10-16' as any });
+const prisma = new PrismaClient();
+export async function POST(req: NextRequest) {
+try {
+const rawRequestBody = await req.text();
+const webhookInboundSignature = req.headers.get('stripe-signature') || '';
+let verifiedStripeEvent: Stripe.Event;
+try {
+verifiedStripeEvent = stripe.webhooks.constructEvent(
+rawRequestBody,
+webhookInboundSignature,
+process.env.STRIPE_WEBHOOK_SECRET || ''
+);
+} catch (signatureErr: any) {
+return NextResponse.json({ error: Signature challenge dropped: ${signatureErr.message} }, { status: 400 });
+}
+const transactionIntent = verifiedStripeEvent.data.object as Stripe.PaymentIntent;
+const internalTrackingToken = transactionIntent.metadata?.trackingToken;
+if (!internalTrackingToken) {
+return NextResponse.json({ received: true, status: "Ignored outside tracking limits." }, { status: 200 });
+}
+if (verifiedStripeEvent.type === 'payment_intent.amount_capturable_updated' || verifiedStripeEvent.type === 'checkout.session.completed') {
+await prisma.$transaction(async (tx) => {
+const internalSessionRecord = await tx.calibrationSession.findUnique({
+where: { sessionToken: internalTrackingToken }
+});
+if (internalSessionRecord) {
+await tx.calibrationSession.update({
+where: { sessionToken: internalTrackingToken },
+data: {
+transactionState: 'HELD_IN_ESCROW',
+stripePaymentIntentId: transactionIntent.id
+}
+});
+await tx.vehicleProject.update({
+where: { id: transactionIntent.metadata.targetProjectId },
+data: { lifecycleState: 'LOGGING_PENDING' }
+});
+}
+});
+}
+return NextResponse.json({ received: true, transactionalState: "Synchronized" }, { status: 200 });
+} catch (err: any) {
+return NextResponse.json({ error: "Webhook sequence failure.", message: err.message }, { status: 500 });
+}
+}
+```
+
+CONFIGURATION PILLAR 5: COMPACT FRONTEND INTERACTION INTERFACE
+
+Create components/dashboard/OnboardingWizard.tsx:
+```tsx
+"use client";
+import React, { useState, ChangeEvent } from 'react';
+interface WizardState {
+currentStep: number;
+engineArchitecture: string;
+ecuTargetPlatform: string;
+injectorFlowRatingCc: string;
+diagnosticTroubleCodes: string;
+telemetryLogFile: File | null;
+processingState: boolean;
+serverFeedbackMsg: string;
+}
+export default function OnboardingWizard({ projectId }: { projectId: string }) {
+const [state, setState] = useState({
+currentStep: 1,
+engineArchitecture: '',
+ecuTargetPlatform: 'Haltech_Elite_2500',
+injectorFlowRatingCc: '',
+diagnosticTroubleCodes: '',
+telemetryLogFile: null,
+processingState: false,
+serverFeedbackMsg: ''
+});
+const nextStep = () => setState(prev => ({ ...prev, currentStep: prev.currentStep + 1 }));
+const prevStep = () => setState(prev => ({ ...prev, currentStep: Math.max(1, prev.currentStep - 1) }));
+const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+const { name, value } = e.target;
+setState(prev => ({ ...prev, [name]: value }));
+};
+const handleFile = (e: ChangeEvent) => {
+if (e.target.files && e.target.files[0]) {
+setState(prev => ({ ...prev, telemetryLogFile: e.target.files![0] }));
+}
+};
+const fireEscrowCheckout = async () => {
+setState(prev => ({ ...prev, processingState: true, serverFeedbackMsg: 'Provisioning secure multi-party escrow gateway...' }));
+try {
+const res = await fetch('/api/checkout/escrow-capture', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ projectId, allocationCostUsd: 450.00 })
+});
+const data = await res.json();
+if (res.ok && data.url) {
+window.location.href = data.url;
+} else {
+setState(prev => ({ ...prev, processingState: false, serverFeedbackMsg: data.error || 'Gateway validation rejected.' }));
+}
+} catch (err: any) {
+setState(prev => ({ ...prev, processingState: false, serverFeedbackMsg: Connection variant failure: ${err.message} }));
+}
+};
+return (
+
+
+Step: 0{state.currentStep} / 04
+Engine Calibration Data Terminal Pipeline
+{state.serverFeedbackMsg && (
+
+{state.serverFeedbackMsg}
+
+)}
+{state.currentStep === 1 && (
+
+01 / Mechanical Configurations
+
+
+
+Haltech Elite 2500
+MoTeC M150 System
+Link G4X Engine Management
+
+
+
+
+)}
+{state.currentStep === 2 && (
+
+02 / Telemetry Error Mapping
+
+
+)}
+{state.currentStep === 3 && (
+
+03 / Stream Telemetry Processing
+
+{state.telemetryLogFile ? Staged: ${state.telemetryLogFile.name} : "[ Click to Mount Monotonic Telemetry CSV File ]"}
+)}
+{state.currentStep === 4 && (
+
+04 / Ledger Escrow Lock
+$450.00
+Assets freeze immediately inside Stripe Connect escrow channels. Funds disburse programmatically to the calibrator space only upon delivery of verified firmware files.
+
+)}
+{state.currentStep > 1 && (
+Back
+)}
+
+{state.currentStep < 4 ? (
+Next
+) : (
+<button type="button" onClick={fireEscrowCheckout} disabled={state.processingState || !state.telemetryLogFile} className="bg-amber-500 disabled:opacity-20 text-zinc-950 font-bold px-6 py-2 text-xs uppercase tracking-wider rounded">Lock Ledger & Authorize
+)}
+
+
+
+);
+}
+```
+EXECUTION PIPELINE SEQUENCING INSTRUCTIONS:
+Parse this entire package document manifest. Provision every asset itemization into the clean workspaces file structure without truncation. Initialize node modules deployment and run background server execution cycles immediately. Generate code framework now.
+
+---
+
+### 3. What to do after pasting inside Replat Agent
+1. **Initialize the Agent:** Replit Agent will parse this full architectural blueprint block, mapping the exact directories, TypeScript logic engines, and React UI layout patterns into your active sandbox project container.
+2. **Auto-Provision Databases:** The integrated `.replit` instruction configuration signals the workspace to automatically spawn an attached PostgreSQL database instances cluster locally.
+3. **Execute the Migration Run:** Inside Replit's terminal console command window, simply execute `npx prisma db push` to generate the matching tables structure cleanly.
+4. **Environment Keys:** Go to Replit's "Secrets" configuration tab and drop your `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` tokens in to instantly connect your live payment logic pipelines.
+
+<FollowUp>
+Drop this one-shot prompt into your **Replit Agent interface workspace** now. Once your code architecture finishes its deployment orchestration, let me know if you need help designing the **Next.js custom shop routing configurations** to handle custom domains for your onboarding tenants!
+</FollowUp>
