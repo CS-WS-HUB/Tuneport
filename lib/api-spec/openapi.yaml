@@ -3,13 +3,27 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Multi-tenant calibration projects, telemetry validation, and payment workflows.
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: account
+    description: Signed-in account and tenant access.
+  - name: tenants
+    description: Tenant setup, membership, and invitations.
+  - name: projects
+    description: Calibration project lifecycle.
+  - name: telemetry
+    description: Private telemetry upload and validation.
+  - name: payments
+    description: Stripe Connect onboarding and project payment authorization.
+  - name: admin
+    description: Restricted platform administration.
+  - name: storage
+    description: Object storage upload and serving endpoints.
 paths:
   /healthz:
     get:
@@ -24,7 +38,829 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /account:
+    get:
+      operationId: getAccount
+      tags: [account]
+      summary: Get the current user's profile and tenant memberships
+      responses:
+        "200":
+          description: Account and memberships.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "401":
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [account]
+      summary: Get tenant dashboard summary and recent project activity
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Tenant dashboard summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardResponse"
+        "401":
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Tenant access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [account]
+      summary: List recent tenant activity
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+      responses:
+        "200":
+          description: Recent activity.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEvent"
+  /tenants:
+    get:
+      operationId: listTenants
+      tags: [tenants]
+      summary: List tenants accessible to the signed-in user
+      responses:
+        "200":
+          description: Accessible tenant memberships.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenantMembership"
+    post:
+      operationId: createTenant
+      tags: [tenants]
+      summary: Create a tenant and make the current user its owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantInput"
+      responses:
+        "201":
+          description: Tenant created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMembership"
+        "400":
+          description: Invalid tenant details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /tenants/{tenantId}:
+    get:
+      operationId: getTenant
+      tags: [tenants]
+      summary: Get tenant details
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: Tenant details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMembership"
+        "403":
+          description: Tenant access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Tenant not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    patch:
+      operationId: updateTenant
+      tags: [tenants]
+      summary: Update tenant profile
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantUpdate"
+      responses:
+        "200":
+          description: Tenant updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMembership"
+        "400":
+          description: Invalid tenant details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Tenant owner access required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /tenants/{tenantId}/members:
+    get:
+      operationId: listTenantMembers
+      tags: [tenants]
+      summary: List members of a tenant
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: Tenant members.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenantMember"
+        "403":
+          description: Tenant access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /tenants/{tenantId}/invitations:
+    get:
+      operationId: listTenantInvitations
+      tags: [tenants]
+      summary: List pending tenant invitations
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: Pending invitations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenantInvitation"
+        "403":
+          description: Tenant owner access required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      operationId: createTenantInvitation
+      tags: [tenants]
+      summary: Invite a calibrator or client to a tenant
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationInput"
+      responses:
+        "201":
+          description: Invitation created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationCreated"
+        "400":
+          description: Invalid or duplicate invitation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Tenant owner access required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /invitations/accept:
+    post:
+      operationId: acceptInvitation
+      tags: [tenants]
+      summary: Accept a tenant invitation using its private link token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationAcceptInput"
+      responses:
+        "200":
+          description: Invitation accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMembership"
+        "400":
+          description: Invitation is invalid or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The signed-in email does not match the invitation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List projects in a tenant
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: lifecycleState
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ProjectLifecycle"
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Tenant projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CalibrationProject"
+        "403":
+          description: Tenant access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a calibration project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Project created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalibrationProject"
+        "400":
+          description: Invalid project details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Project creation is not allowed for this tenant role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a calibration project and its recent telemetry/payment state
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalibrationProject"
+        "403":
+          description: Project access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Project not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update calibration build-sheet details
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdate"
+      responses:
+        "200":
+          description: Project updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalibrationProject"
+        "400":
+          description: Invalid project details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Project update is not allowed for this tenant role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}/lifecycle:
+    patch:
+      operationId: updateProjectLifecycle
+      tags: [projects]
+      summary: Advance a project through its permitted workflow
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectLifecycleUpdate"
+      responses:
+        "200":
+          description: Project lifecycle updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalibrationProject"
+        "400":
+          description: Lifecycle transition is not valid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Lifecycle update is not allowed for this tenant role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}/telemetry:
+    get:
+      operationId: listProjectTelemetry
+      tags: [telemetry]
+      summary: List telemetry uploads for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Telemetry validation records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TelemetryLog"
+        "403":
+          description: Project access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}/telemetry/validate:
+    post:
+      operationId: validateProjectTelemetry
+      tags: [telemetry]
+      summary: Validate an uploaded telemetry CSV against expected units
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelemetryValidationInput"
+      responses:
+        "201":
+          description: Telemetry parsed and validation metrics stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelemetryLog"
+        "400":
+          description: Invalid file, CSV shape, or unit configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Project access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}/telemetry/{logId}:
+    get:
+      operationId: getProjectTelemetry
+      tags: [telemetry]
+      summary: Get telemetry validation details
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: logId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Telemetry validation record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelemetryLog"
+        "403":
+          description: Project access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Telemetry record not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a private presigned URL for telemetry upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Invalid upload metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Project upload access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/objects/{objectPath}:
+    get:
+      operationId: getStorageObject
+      tags: [storage]
+      summary: Serve an authorized private telemetry file
+      parameters:
+        - name: objectPath
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object content streamed after tenant authorization.
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: File access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Object not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /tenants/{tenantId}/stripe/onboarding-link:
+    post:
+      operationId: createStripeOnboardingLink
+      tags: [payments]
+      summary: Create or refresh a Stripe Connect onboarding link
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: Connect onboarding link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StripeOnboardingResponse"
+        "403":
+          description: Tenant owner access required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Stripe integration is not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /tenants/{tenantId}/stripe/status:
+    get:
+      operationId: getStripeConnectStatus
+      tags: [payments]
+      summary: Get Stripe Connect onboarding and payout capability status
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: Connect account status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StripeConnectStatus"
+        "403":
+          description: Tenant access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}/payments/checkout:
+    post:
+      operationId: createProjectCheckout
+      tags: [payments]
+      summary: Create a temporary card authorization checkout for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Checkout URL and authorization terms.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutResponse"
+        "400":
+          description: Project cannot be charged in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Client membership required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Stripe integration is not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}/payments:
+    get:
+      operationId: getProjectPayment
+      tags: [payments]
+      summary: Get the latest project payment authorization and transfer state
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project payment state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPayment"
+        "403":
+          description: Project access denied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No payment record exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /projects/{projectId}/payments/confirm-completion:
+    post:
+      operationId: confirmProjectCompletion
+      tags: [payments]
+      summary: Capture an active authorization and transfer proceeds after client approval
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompletionConfirmation"
+      responses:
+        "200":
+          description: Payment captured and transfer status updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPayment"
+        "400":
+          description: Authorization is missing, expired, or not capturable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Client confirmation required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /admin/tenants:
+    get:
+      operationId: listAdminTenants
+      tags: [admin]
+      summary: List all tenants for a platform super administrator
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/TenantStatus"
+      responses:
+        "200":
+          description: Platform tenants.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tenant"
+        "403":
+          description: Platform super administrator access required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /admin/tenants/{tenantId}:
+    patch:
+      operationId: updateAdminTenant
+      tags: [admin]
+      summary: Change tenant platform status
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminTenantUpdate"
+      responses:
+        "200":
+          description: Tenant platform status updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "403":
+          description: Platform super administrator access required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /stripe/webhook:
+    post:
+      operationId: receiveStripeWebhook
+      tags: [payments]
+      summary: Receive signed Stripe Connect payment events
+      description: Signature verification is performed server-side before state changes.
+      parameters:
+        - name: stripe-signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StripeWebhookEvent"
+      responses:
+        "200":
+          description: Event processed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResponse"
+        "400":
+          description: Invalid signature or event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 components:
+  parameters:
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +869,305 @@ components:
           type: string
       required:
         - status
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    TenantRole:
+      type: string
+      enum: [SUPER_ADMIN, SHOP_OWNER, STAFF_CALIBRATOR, END_USER_CLIENT]
+    TenantStatus:
+      type: string
+      enum: [PROVISIONING, ACTIVE, SUSPENDED, TERMINATED]
+    ProjectLifecycle:
+      type: string
+      enum: [AWAITING_BUILD_SHEET, DIAGNOSTIC_MAPPING, LOGGING_PENDING, CALIBRATION_READY, COMPLETION_VERIFIED]
+    PaymentState:
+      type: string
+      enum: [CHECKOUT_PENDING, AUTHORIZED, CAPTURED, TRANSFERRED, CANCELED, FAILED, AUTHORIZATION_EXPIRED]
+    UserProfile:
+      type: object
+      required: [id, email, name, globalRole]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        globalRole: { type: string, enum: [USER, SUPER_ADMIN] }
+    Tenant:
+      type: object
+      required: [id, companyName, corporateSlug, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        companyName: { type: string }
+        corporateSlug: { type: string }
+        status: { $ref: "#/components/schemas/TenantStatus" }
+        stripeConnected: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TenantMembership:
+      allOf:
+        - $ref: "#/components/schemas/Tenant"
+        - type: object
+          required: [role]
+          properties:
+            role: { $ref: "#/components/schemas/TenantRole" }
+    TenantMember:
+      type: object
+      required: [id, userId, email, name, role, joinedAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/TenantRole" }
+        joinedAt: { type: string, format: date-time }
+    AccountResponse:
+      type: object
+      required: [user, tenants]
+      properties:
+        user: { $ref: "#/components/schemas/UserProfile" }
+        tenants:
+          type: array
+          items: { $ref: "#/components/schemas/TenantMembership" }
+    TenantInput:
+      type: object
+      required: [companyName]
+      properties:
+        companyName: { type: string, minLength: 2, maxLength: 120 }
+    TenantUpdate:
+      type: object
+      required: [companyName]
+      properties:
+        companyName: { type: string, minLength: 2, maxLength: 120 }
+    TenantInvitation:
+      type: object
+      required: [id, email, role, status, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role:
+          type: string
+          enum: [STAFF_CALIBRATOR, END_USER_CLIENT]
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, EXPIRED, REVOKED]
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    InvitationInput:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        role:
+          type: string
+          enum: [STAFF_CALIBRATOR, END_USER_CLIENT]
+    InvitationCreated:
+      type: object
+      required: [invitation, inviteUrl]
+      properties:
+        invitation: { $ref: "#/components/schemas/TenantInvitation" }
+        inviteUrl: { type: string, format: uri }
+    InvitationAcceptInput:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256 }
+    DashboardResponse:
+      type: object
+      required: [tenant, totalProjects, activeProjects, awaitingTelemetry, awaitingCompletion, authorizedPayments, recentProjects]
+      properties:
+        tenant: { $ref: "#/components/schemas/TenantMembership" }
+        totalProjects: { type: integer }
+        activeProjects: { type: integer }
+        awaitingTelemetry: { type: integer }
+        awaitingCompletion: { type: integer }
+        authorizedPayments: { type: integer }
+        recentProjects:
+          type: array
+          items: { $ref: "#/components/schemas/CalibrationProject" }
+    ActivityEvent:
+      type: object
+      required: [id, tenantId, action, summary, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        projectId: { type: ["string", "null"], format: uuid }
+        actorName: { type: string }
+        action: { type: string }
+        summary: { type: string }
+        createdAt: { type: string, format: date-time }
+    ProjectInput:
+      type: object
+      required: [tenantId, engineArchitecture, ecuTargetPlatform, injectorFlowRatingCc]
+      properties:
+        tenantId: { type: string, format: uuid }
+        clientUserId: { type: ["string", "null"] }
+        engineArchitecture: { type: string, minLength: 1, maxLength: 120 }
+        ecuTargetPlatform: { type: string, minLength: 1, maxLength: 120 }
+        vehicleMake: { type: ["string", "null"], maxLength: 80 }
+        vehicleModel: { type: ["string", "null"], maxLength: 80 }
+        vehicleYear: { type: ["integer", "null"], minimum: 1900, maximum: 2100 }
+        injectorFlowRatingCc: { type: number, exclusiveMinimum: 0, maximum: 10000 }
+        inductionSpecs:
+          type: object
+          additionalProperties: true
+        diagnosticTroubleCodes:
+          type: array
+          items: { type: string, maxLength: 20 }
+        priceAmountCents: { type: integer, minimum: 100, maximum: 10000000, default: 45000 }
+    ProjectUpdate:
+      type: object
+      properties:
+        engineArchitecture: { type: string, minLength: 1, maxLength: 120 }
+        ecuTargetPlatform: { type: string, minLength: 1, maxLength: 120 }
+        vehicleMake: { type: ["string", "null"], maxLength: 80 }
+        vehicleModel: { type: ["string", "null"], maxLength: 80 }
+        vehicleYear: { type: ["integer", "null"], minimum: 1900, maximum: 2100 }
+        injectorFlowRatingCc: { type: number, exclusiveMinimum: 0, maximum: 10000 }
+        inductionSpecs:
+          type: object
+          additionalProperties: true
+        diagnosticTroubleCodes:
+          type: array
+          items: { type: string, maxLength: 20 }
+        clientUserId: { type: ["string", "null"] }
+        priceAmountCents: { type: integer, minimum: 100, maximum: 10000000 }
+    ProjectLifecycleUpdate:
+      type: object
+      required: [lifecycleState]
+      properties:
+        lifecycleState: { $ref: "#/components/schemas/ProjectLifecycle" }
+        note: { type: string, maxLength: 500 }
+    CalibrationProject:
+      type: object
+      required: [id, tenantId, engineArchitecture, ecuTargetPlatform, injectorFlowRatingCc, lifecycleState, priceAmountCents, telemetryCount, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        clientUserId: { type: ["string", "null"] }
+        clientName: { type: ["string", "null"] }
+        assignedCalibratorName: { type: ["string", "null"] }
+        engineArchitecture: { type: string }
+        ecuTargetPlatform: { type: string }
+        vehicleMake: { type: ["string", "null"] }
+        vehicleModel: { type: ["string", "null"] }
+        vehicleYear: { type: ["integer", "null"] }
+        injectorFlowRatingCc: { type: number }
+        inductionSpecs:
+          type: object
+          additionalProperties: true
+        diagnosticTroubleCodes:
+          type: array
+          items: { type: string }
+        lifecycleState: { $ref: "#/components/schemas/ProjectLifecycle" }
+        priceAmountCents: { type: integer }
+        telemetryCount: { type: integer }
+        paymentState: { type: ["string", "null"], enum: [CHECKOUT_PENDING, AUTHORIZED, CAPTURED, TRANSFERRED, CANCELED, FAILED, AUTHORIZATION_EXPIRED, null] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    UploadUrlRequest:
+      type: object
+      required: [projectId, name, size, contentType]
+      properties:
+        projectId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        size: { type: integer, minimum: 1, maximum: 26214400 }
+        contentType: { type: string, enum: [text/csv, application/vnd.ms-excel, application/octet-stream] }
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath, expiresAt]
+      properties:
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+        expiresAt: { type: string, format: date-time }
+    TelemetryValidationInput:
+      type: object
+      required: [objectPath, filename, expectedXUnit, expectedYUnit]
+      properties:
+        objectPath: { type: string, minLength: 1 }
+        filename: { type: string, minLength: 1, maxLength: 200 }
+        expectedXUnit: { type: string, minLength: 1, maxLength: 30 }
+        expectedYUnit: { type: string, minLength: 1, maxLength: 30 }
+    TelemetryLog:
+      type: object
+      required: [id, projectId, filename, sizeBytes, validationStatus, isMonotonic, detectedRows, detectedCols, unitSystemVerified, errors, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        filename: { type: string }
+        sizeBytes: { type: integer }
+        objectPath: { type: string }
+        validationStatus: { type: string, enum: [VALID, WARNING, INVALID] }
+        isMonotonic: { type: boolean }
+        detectedRows: { type: integer }
+        detectedCols: { type: integer }
+        unitSystemVerified: { type: boolean }
+        xUnit: { type: string }
+        yUnit: { type: string }
+        errors:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+    StripeOnboardingResponse:
+      type: object
+      required: [accountLinkUrl, expiresAt, onboardingComplete]
+      properties:
+        accountLinkUrl: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+        onboardingComplete: { type: boolean }
+    StripeConnectStatus:
+      type: object
+      required: [connected, onboardingComplete, chargesEnabled, payoutsEnabled, detailsSubmitted]
+      properties:
+        connected: { type: boolean }
+        onboardingComplete: { type: boolean }
+        chargesEnabled: { type: boolean }
+        payoutsEnabled: { type: boolean }
+        detailsSubmitted: { type: boolean }
+        requirementsDue:
+          type: array
+          items: { type: string }
+    CheckoutResponse:
+      type: object
+      required: [checkoutUrl, amountCents, applicationFeeCents, authorizationNotice]
+      properties:
+        checkoutUrl: { type: string, format: uri }
+        amountCents: { type: integer }
+        applicationFeeCents: { type: integer }
+        authorizationNotice: { type: string }
+    ProjectPayment:
+      type: object
+      required: [id, projectId, state, amountCents, applicationFeeCents, currency, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        state: { $ref: "#/components/schemas/PaymentState" }
+        amountCents: { type: integer }
+        applicationFeeCents: { type: integer }
+        currency: { type: string }
+        authorizationExpiresAt: { type: ["string", "null"], format: date-time }
+        transferId: { type: ["string", "null"] }
+        updatedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        authorizationNotice: { type: string }
+    CompletionConfirmation:
+      type: object
+      required: [confirmDelivery]
+      properties:
+        confirmDelivery: { type: boolean, const: true }
+    AdminTenantUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/TenantStatus" }
+    WebhookResponse:
+      type: object
+      required: [received]
+      properties:
+        received: { type: boolean }
+    StripeWebhookEvent:
+      type: object
+      additionalProperties: true
 

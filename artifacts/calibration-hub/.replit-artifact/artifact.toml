@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Calibration Hub"
+description = "A secure multi-tenant calibration and telemetry exchange for tuning shops, calibrators, and vehicle owners. Manage calibration projects, validate telemetry CSVs, and coordinate Stripe Connect payment authorization and release workflows."
+version = "1.0.0"
+id = "artifacts/calibration-hub"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23979
+
+[services.development]
+run = "pnpm --filter @workspace/calibration-hub run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/calibration-hub", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/calibration-hub/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23979"
+BASE_PATH = "/"
